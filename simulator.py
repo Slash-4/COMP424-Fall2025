@@ -111,16 +111,17 @@ class Simulator:
         with all_logging_disabled():
             for i in range(self.args.autoplay_runs):
                 swap_players = i % 2 == 0
+                # swap_players = False
                 board_fpath = self.board_options[ np.random.randint(len(self.board_options)) ] 
                 p0_score, p1_score, p0_time, p1_time = self.run(
                     swap_players=swap_players, board_fpath=board_fpath
                 )
                 if swap_players:
                     p0_score, p1_score, p0_time, p1_time = (
-                        p1_score,
                         p0_score,
-                        p1_time,
+                        p1_score,
                         p0_time,
+                        p1_time,
                     )
                 if p0_score > p1_score:
                     p1_win_count += 1

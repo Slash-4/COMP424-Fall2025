@@ -354,7 +354,7 @@ class MCTSNode:
 
   @PROFILER.profile("MCTSNode.lim_rollout")
   def limited_rollout(self) -> float:
-    depth_limit = 20
+    depth_limit = 200
 
     curr_state = deepcopy(self.state)
     curr_player = self.player
