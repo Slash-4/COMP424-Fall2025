@@ -13,7 +13,7 @@ WINRATE_PATTERNS = [
     re.compile(r'win percentage:?\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', re.I),
 ]
 
-# python evaluate_moves.py --output-dir ./results --sim-cmd "python simulator.py --player_1 student_agent --player_2 random_agent --autoplay"
+# python evaluate_moves.py --output-dir ./results --sim-cmd "python simulator.py --player_1 student_agent --player_2 random_agent --autoplay --autoplay_runs 1000"
 
 moves = [(1,0),
         (0,1),
