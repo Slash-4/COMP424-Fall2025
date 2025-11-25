@@ -80,10 +80,16 @@ def main(args):
     output_folder.mkdir(parents=True, exist_ok=True)
     results_path = output_folder / (args.results_file or "move_evals.csv")
 
-    # open results CSV
-    with results_path.open("w", newline="") as rf:
+    # Check if results file exists to determine if we should write headers
+    file_exists = results_path.exists()
+
+    # open results CSV in append mode
+    with results_path.open("a", newline="") as rf:
         writer = csv.writer(rf)
-        writer.writerow(["move_idx", "dest_row", "dest_col", "winrate", "sim_stdout_snippet"])
+        
+        # Write header only if file is new
+        if not file_exists:
+            writer.writerow(["move_idx", "dest_row", "dest_col", "winrate"])
 
         for mi, pm in enumerate(possible_moves):
             pm_arr = np.array(pm)
@@ -93,7 +99,7 @@ def main(args):
 
             # try to find winrate for player 1
             win = parse_winrate(sim_out, player=1)
-            snippet = (sim_out[:400].replace("\n", " ") + ("..." if len(sim_out) > 400 else ""))
+
 
             # infer destination location from pm (first non-zero)
             # nz = np.argwhere(pm_arr != 0)
@@ -115,8 +121,8 @@ def main(args):
             
             dest_row, dest_col = moves[mi]
  
-            # write result
-            writer.writerow([mi, dest_row, dest_col, win if win is not None else "", snippet])
+            # write result (append)
+            writer.writerow([mi, dest_row, dest_col, win if win is not None else ""])
 
             print(f"move {mi}: dest ({dest_row},{dest_col}) winrate={win}")
 
