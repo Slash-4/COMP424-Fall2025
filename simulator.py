@@ -114,7 +114,7 @@ class Simulator:
                 # swap_players = False
                 board_fpath = self.board_options[ np.random.randint(len(self.board_options)) ] 
                 p0_score, p1_score, p0_time, p1_time = self.run(
-                    swap_players=swap_players, board_fpath=board_fpath
+                    swap_players=False, board_fpath=board_fpath
                 )
                 if swap_players:
                     p0_score, p1_score, p0_time, p1_time = (

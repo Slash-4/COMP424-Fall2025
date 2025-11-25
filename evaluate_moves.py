@@ -13,6 +13,8 @@ WINRATE_PATTERNS = [
     re.compile(r'win percentage:?\s*[:=]?\s*(\d+(?:\.\d+)?)\s*%?', re.I),
 ]
 
+# python evaluate_moves.py --output-dir ./results --sim-cmd "python simulator.py --player_1 student_agent --player_2 random_agent --autoplay"
+
 
 def parse_winrate(text: str, player: int = 1):
     """
@@ -49,8 +51,20 @@ def parse_winrate(text: str, player: int = 1):
     return None
 
 
-def run_simulator(sim_cmd_template: str, input_path: Path, timeout: int = 60):
-    cmd = shlex.split(sim_cmd_template.format(input=str(input_path)))
+def run_simulator(sim_cmd_template: str, move_idx: int, timeout: int = 60):
+    """
+    Run simulator with move index written to a text file.
+    Returns stdout.
+    """
+    cmd = shlex.split(sim_cmd_template.format(move=move_idx))
+
+    
+    with open("agents/move.txt", "w") as mo:
+        mo.write(str(move_idx))
+    mo.close()
+    
+
+
     try:
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=False)
         out = proc.stdout.decode(errors='ignore')
@@ -62,78 +76,60 @@ def run_simulator(sim_cmd_template: str, input_path: Path, timeout: int = 60):
 
 
 def main(args):
-    input_folder = Path(args.input_dir)
     output_folder = Path(args.output_dir)
     output_folder.mkdir(parents=True, exist_ok=True)
     results_path = output_folder / (args.results_file or "move_evals.csv")
 
-    csv_files = sorted(input_folder.glob("*.csv"))
-    if not csv_files:
-        print("No CSV files found in", input_folder)
-        return
-
     # open results CSV
     with results_path.open("w", newline="") as rf:
         writer = csv.writer(rf)
-        writer.writerow(["source_csv", "move_idx", "dest_row", "dest_col", "winrate", "sim_stdout_snippet", "modified_csv_path"])
+        writer.writerow(["move_idx", "dest_row", "dest_col", "winrate", "sim_stdout_snippet"])
 
-        for src_csv in csv_files:
-            board = np.loadtxt(src_csv, delimiter=",")
-            for mi, pm in enumerate(possible_moves):
-                pm_arr = np.array(pm)
-                if pm_arr.shape != board.shape:
-                    print(f"skipping {src_csv.name} move {mi}: shape mismatch {pm_arr.shape} vs {board.shape}")
-                    continue
+        for mi, pm in enumerate(possible_moves):
+            pm_arr = np.array(pm)
 
-                # Skip moves that attempt to modify an obstacle (cell value 3) on the base board
-                nz = np.argwhere(pm_arr != 0)
-                if nz.size:
-                    rows, cols = nz[:, 0], nz[:, 1]
-                    if np.any(board[rows, cols] == 3):
-                        print(f"skipping {src_csv.name} move {mi}: attempts to modify obstacle cell(s)")
-                        continue
+            # run simulator with move index
+            sim_out = run_simulator(args.sim_cmd, mi, timeout=args.timeout)
 
-                # overlay: non-zero entries in pm replace board entries
-                modified = np.where(pm_arr != 0, pm_arr, board)
+            # try to find winrate for player 1
+            win = parse_winrate(sim_out, player=1)
+            snippet = (sim_out[:400].replace("\n", " ") + ("..." if len(sim_out) > 400 else ""))
 
-                # create filename
-                out_name = f"{src_csv.stem}_move{mi}.csv"
-                out_path = output_folder / out_name
+            # infer destination location from pm (first non-zero)
+            # nz = np.argwhere(pm_arr != 0)
+            # if nz.size:
+            #     dest_row, dest_col = int(nz[0][0]), int(nz[0][1])
+            # else:
+            #     dest_row, dest_col = -1, -1
 
-                # Reuse existing modified csv if present, otherwise save
-                if out_path.exists():
-                    print(f"reusing existing modified csv: {out_path.name}")
-                else:
-                    np.savetxt(out_path, modified, delimiter=",", fmt="%d")
 
-                # run simulator (simulator command must include '{input}' placeholder)
-                sim_out = run_simulator(args.sim_cmd, out_path, timeout=args.timeout)
+            moves = [(1,0),
+                     (0,1),
+                     (1,1),
+                     (2,0),
+                     (0,2),
+                     (2,1),
+                     (1,2),
+                     (2,2),
+                     ]
+            
+            dest_row, dest_col = moves[mi]
+ 
+            # write result
+            writer.writerow([mi, dest_row, dest_col, win if win is not None else "", snippet])
 
-                # try to find winrate for player 1
-                win = parse_winrate(sim_out, player=1)
-                snippet = (sim_out[:400].replace("\n", " ") + ("..." if len(sim_out) > 400 else ""))
+            print(f"move {mi}: dest ({dest_row},{dest_col}) winrate={win}")
 
-                # try to infer destination location from pm (first non-zero)
-                nz = np.argwhere(pm_arr != 0)
-                if nz.size:
-                    dest_row, dest_col = int(nz[0][0]), int(nz[0][1])
-                else:
-                    dest_row, dest_col = -1, -1
-
-                # write result (include stdout snippet)
-                writer.writerow([src_csv.name, mi, dest_row, dest_col, win if win is not None else "", "", str(out_path)])
-
-                # optional small delay between runs
-                if args.delay:
-                    import time
-                    time.sleep(args.delay)
+            # optional small delay between runs
+            if args.delay:
+                import time
+                time.sleep(args.delay)
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Overlay opening moves onto CSV boards, run simulator and record winrates.")
-    p.add_argument("--input-dir", required=True, help="Folder containing source CSV boards")
-    p.add_argument("--output-dir", required=True, help="Folder to write modified CSVs and results")
-    p.add_argument("--sim-cmd", required=True, help="Simulator command template. Use '{input}' where modified csv path should be inserted. Example: \"python simulate.py --board {input}\"")
+    p = argparse.ArgumentParser(description="Evaluate opening moves by writing move index and running simulator.")
+    p.add_argument("--output-dir", required=True, help="Folder to write results CSV")
+    p.add_argument("--sim-cmd", required=True, help="Simulator command template. Use '{move}' where move index should be inserted. Example: \"python simulate.py --move {move}\"")
     p.add_argument("--results-file", default="move_evals.csv", help="CSV filename for results (written into output-dir)")
     p.add_argument("--timeout", type=int, default=60, help="Per-simulation timeout in seconds")
     p.add_argument("--delay", type=float, default=0.0, help="Optional delay between simulator runs")

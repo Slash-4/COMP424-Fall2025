@@ -121,38 +121,9 @@ class StudentAgent(Agent):
 
   def __init__(self):
     super(StudentAgent, self).__init__()
-    self.name = "StudentAgent"
-    
+    self.name = "student_agent"
+    self.move_count = 0 
     self.random_pool = np.random.randint(0, 48, size=10_000)
-
-  @PROFILER.profile("StudentAgent.mcts_search")
-  def mcts_search(self, root_state, player, iter=100):
-    root = MCTSNode(root_state, player, agent_player_id=player)
-
-    for _ in range(iter):
-      node = root
-      print_tree(node)
-      print("-"*60)
-
-      while not node.is_terminal() and node.is_fully_expanded():
-            # print("First best child")
-            node = node.best_child()
-
-      if not node.is_terminal():
-        node = node.expand()
-
-      # Simulation
-      result = node.rollout()
-
-      # Backpropagation
-      node.backpropagate(result)
-
-      
-
-  
-    return root.best_child(c=0).action
-  
-
     
   def step(self, chess_board, player, opponent):
     """
@@ -177,14 +148,28 @@ class StudentAgent(Agent):
     start_time = time.time()
 
     # next_move = get_valid_moves(chess_board, player)[0] #this litterally wins against a random agent 82% of the time 
-    next_move = self.mcts_search(chess_board, player)
+
+    if self.move_count == 0:
+        
+        file = open('/home/slash4/Desktop/Fall_Semester_2025/ai/final_proj/COMP424-Fall2025/agents/move.txt', 'r')
+        move_idx = int(file.read())
+
+
+        moves = get_valid_moves(chess_board, player)
+        next_move = moves[move_idx]
+        print(next_move.get_src(), next_move.get_dest())
+    
+    else:
+        next_move = random_move(chess_board, player)
+    
+    self.move_count += 1
+
 
     time_taken = time.time() - start_time
 
     print("My AI's turn took ", time_taken, "seconds.")
 
     # Print profiler summary for this step
-    print(PROFILER.report(top=10))
 
     # Dummy return (you should replace this with your actual logic)
     # Returning a random valid move as an example
