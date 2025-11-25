@@ -15,6 +15,15 @@ WINRATE_PATTERNS = [
 
 # python evaluate_moves.py --output-dir ./results --sim-cmd "python simulator.py --player_1 student_agent --player_2 random_agent --autoplay"
 
+moves = [(1,0),
+        (0,1),
+        (1,1),
+        (2,0),
+        (0,2),
+        (2,1),
+        (1,2),
+        (2,2),
+        ]
 
 def parse_winrate(text: str, player: int = 1):
     """
@@ -66,7 +75,7 @@ def run_simulator(sim_cmd_template: str, move_idx: int, timeout: int = 60):
 
 
     try:
-        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout, check=False)
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
         out = proc.stdout.decode(errors='ignore')
     except subprocess.TimeoutExpired:
         out = "SIMULATOR_TIMEOUT"
@@ -83,13 +92,16 @@ def main(args):
     # Check if results file exists to determine if we should write headers
     file_exists = results_path.exists()
 
+    win_rates = []
+
     # open results CSV in append mode
     with results_path.open("a", newline="") as rf:
         writer = csv.writer(rf)
         
         # Write header only if file is new
         if not file_exists:
-            writer.writerow(["move_idx", "dest_row", "dest_col", "winrate"])
+            # writer.writerow(["move_idx", "dest_row", "dest_col", "winrate"])
+            writer.writerow(moves)
 
         for mi, pm in enumerate(possible_moves):
             pm_arr = np.array(pm)
@@ -100,36 +112,23 @@ def main(args):
             # try to find winrate for player 1
             win = parse_winrate(sim_out, player=1)
 
+            win_rates.append(win)
 
-            # infer destination location from pm (first non-zero)
-            # nz = np.argwhere(pm_arr != 0)
-            # if nz.size:
-            #     dest_row, dest_col = int(nz[0][0]), int(nz[0][1])
-            # else:
-            #     dest_row, dest_col = -1, -1
-
-
-            moves = [(1,0),
-                     (0,1),
-                     (1,1),
-                     (2,0),
-                     (0,2),
-                     (2,1),
-                     (1,2),
-                     (2,2),
-                     ]
             
             dest_row, dest_col = moves[mi]
- 
-            # write result (append)
-            writer.writerow([mi, dest_row, dest_col, win if win is not None else ""])
-
             print(f"move {mi}: dest ({dest_row},{dest_col}) winrate={win}")
 
-            # optional small delay between runs
-            if args.delay:
-                import time
-                time.sleep(args.delay)
+ 
+            # write result (append)
+        # writer.writerow([mi, dest_row, dest_col, win if win is not None else ""])
+
+        writer.writerow(win_rates)
+
+
+        # optional small delay between runs
+        if args.delay:
+            import time
+            time.sleep(args.delay)
 
 
 if __name__ == "__main__":

@@ -145,7 +145,7 @@ class StudentAgent(Agent):
     # Some simple code to help you with timing. Consider checking 
     # time_taken during your search and breaking with the best answer
     # so far when it nears 2 seconds.
-    start_time = time.time()
+    # start_time = time.time()
 
     # next_move = get_valid_moves(chess_board, player)[0] #this litterally wins against a random agent 82% of the time 
 
@@ -157,7 +157,7 @@ class StudentAgent(Agent):
 
         moves = get_valid_moves(chess_board, player)
         next_move = moves[move_idx]
-        print(next_move.get_src(), next_move.get_dest())
+        # print(next_move.get_src(), next_move.get_dest())
     
     else:
         next_move = random_move(chess_board, player)
@@ -165,9 +165,9 @@ class StudentAgent(Agent):
     self.move_count += 1
 
 
-    time_taken = time.time() - start_time
+    # time_taken = time.time() - start_time
 
-    print("My AI's turn took ", time_taken, "seconds.")
+    # print("My AI's turn took ", time_taken, "seconds.")
 
     # Print profiler summary for this step
 
