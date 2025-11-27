@@ -146,6 +146,7 @@ class MinimaxNode:
 
     return succ
 
+
 @register_agent("student_agent")
 class StudentAgent(Agent):
   """
