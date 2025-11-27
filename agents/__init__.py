@@ -4,3 +4,4 @@ from .ab2 import StudentAgentAB
 from .greedy_corners_agent import StudentAgent
 from .student_agent import StudentAgent
 from .simple_profiler import SimpleProfiler
+from .mcts_agent import StudentAgent

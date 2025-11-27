@@ -1,87 +1,135 @@
-# Student agent: Add your own agent here
-import copy
-from random import betavariate
+# Students: Antoine Parise, Jiaqi Yang, and Thomas Nguyen
 from numpy.typing import NDArray
-
 from agents.agent import Agent
 from store import register_agent
 import sys
 import numpy as np
-from helpers import random_move, execute_move, check_endgame, get_valid_moves, MoveCoordinates, get_directions, get_two_tile_directions, count_disc_count_change
-import time
+
+from helpers import execute_move, check_endgame, MoveCoordinates
+
+
+import signal
+
+class Timeout(Exception):
+    pass
+
+def handler(signum, frame):
+    raise Timeout()
+
+signal.signal(signal.SIGALRM, handler)
+
+def run_with_timeout(seconds, func, *args, **kwargs):
+    signal.alarm(seconds)
+    try:
+        return func(*args, **kwargs)
+    finally:
+        signal.alarm(0) 
+
+#------------- Debug tools ---------------- #
 
 # Lightweight timing profiler for method-level benchmarking
-from agents.simple_profiler import SimpleProfiler
+import time
+import functools
+
+class SimpleProfiler:
+  def __init__(self):
+    self.data = {}  # label -> {'time': float, 'count': int}
+
+  def _record(self, label, elapsed):
+    d = self.data.setdefault(label, {'time': 0.0, 'count': 0})
+    d['time'] += elapsed
+    d['count'] += 1
+
+  def profile(self, label):
+    def decorator(fn):
+      @functools.wraps(fn)
+      def wrapper(*args, **kwargs):
+        t0 = time.perf_counter()
+        try:
+          return fn(*args, **kwargs)
+        finally:
+          t1 = time.perf_counter()
+          self._record(label, t1 - t0)
+      return wrapper
+    return decorator
+
+  def report(self, top=10):
+    items = sorted(self.data.items(), key=lambda kv: kv[1]['time'], reverse=True)[:top]
+    out = ["Profiler report (label, total_time_s, calls, avg_s):"]
+    for label, v in items:
+      avg = v['time'] / v['count'] if v['count'] else 0.0
+      out.append(f"{label:30} {v['time']:.6f}s  {v['count']:6d}  avg={avg:.6f}s")
+    return "\n".join(out)
+
 
 PROFILER = SimpleProfiler()
 
-def _get_valid_moves(chess_board,player:int) -> list[MoveCoordinates]:
-    """
-    Vectorized get_valid_moves using numpy broadcasting.
-    Returns a list[MoveCoordinates].
-    """
-    board_h, board_w = chess_board.shape
-    # locate source pieces
-    src_rows, src_cols = np.nonzero(chess_board == player)
+#bitmask generator
+one_tile_offsets = [(-1, 0), (1, 0), (0, -1), (0, 1), 
+                    (-1, -1), (-1, 1), (1, -1), (1, 1)]
+two_tile_offsets = [(-2, 0), (2, 0), (0, -2), (0, 2),
+                    (-2, 1), (2, 1), (1, -2), (1, 2),
+                    (-2, -1), (2, -1), (-1, -2), (-1, 2),
+                    (-2, -2), (-2, 2), (2, -2), (2, 2)]
 
-    if src_rows.size == 0:
-        return []
+NEIGHBORS_1TILE = [[] for _ in range(49)]
+NEIGHBORS_2TILE = [[] for _ in range(49)]
 
-    # all offsets to consider
-    offsets = np.array(get_directions() + get_two_tile_directions(), dtype=int)  # (M,2)
-    M = offsets.shape[0]
+for pos in range(49):
+    r, c = pos // 7, pos % 7
+    for dr, dc in one_tile_offsets:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < 7 and 0 <= nc < 7:
+            NEIGHBORS_1TILE[pos].append((nr * 7 + nc, nr, nc))
+    for dr, dc in two_tile_offsets:
+        nr, nc = r + dr, c + dc
+        if 0 <= nr < 7 and 0 <= nc < 7:
+            NEIGHBORS_2TILE[pos].append((nr * 7 + nc, nr, nc))
 
-    # create (N,1,2) src array and broadcast with (1,M,2) offsets -> (N,M,2) dests
-    src = np.stack((src_rows, src_cols), axis=1)[:, None, :]  # (N,1,2)
-    dests = src + offsets[None, :, :]                         # (N,M,2)
+def board_to_bitmasks(chess_board, player: int) -> tuple[int, int]:
+    """Convert board to player and obstacle bitmasks (bit i = board[i//7, i%7])"""
+    player_mask = 0
+    obstacle_mask = 0
+    for r in range(7):
+        for c in range(7):
+            idx = r * 7 + c
+            if chess_board[r, c] == player:
+                player_mask |= (1 << idx)
+            elif chess_board[r, c] == 3 or chess_board[r, c] == 3- player:  # obstacle
+                obstacle_mask |= (1 << idx)
+    return player_mask, obstacle_mask
 
-    # flatten dest coordinates and corresponding src repeats
-    dest_rows = dests[..., 0].ravel()
-    dest_cols = dests[..., 1].ravel()
-    src_rows_rep = np.repeat(src_rows, M)
-    src_cols_rep = np.repeat(src_cols, M)
-
-    # mask: dests inside board
-    in_bounds = (dest_rows >= 0) & (dest_rows < board_h) & (dest_cols >= 0) & (dest_cols < board_w)
-    if not np.any(in_bounds):
-        return []
-
-    dest_rows_ib = dest_rows[in_bounds].astype(int)
-    dest_cols_ib = dest_cols[in_bounds].astype(int)
-    src_rows_ib = src_rows_rep[in_bounds].astype(int)
-    src_cols_ib = src_cols_rep[in_bounds].astype(int)
-
-    # mask: dest empty
-    empty_mask = (chess_board[dest_rows_ib, dest_cols_ib] == 0)
-    if not np.any(empty_mask):
-        return []
-
-    final_src_rows = src_rows_ib[empty_mask]
-    final_src_cols = src_cols_ib[empty_mask]
-    final_dest_rows = dest_rows_ib[empty_mask]
-    final_dest_cols = dest_cols_ib[empty_mask]
-
-    # build MoveCoordinates list
-    moves = [MoveCoordinates((int(sr), int(sc)), (int(dr), int(dc)))
-             for sr, sc, dr, dc in zip(final_src_rows, final_src_cols, final_dest_rows, final_dest_cols)]
-
+@PROFILER.profile("MCTS.super_fast_moves")
+def super_fast_moves(chess_board, player: int) -> list[MoveCoordinates]:
+    
+    player_mask, obstacle_mask = board_to_bitmasks(chess_board, player)
+    occupied_mask = player_mask | obstacle_mask
+    
+    moves = []
+    destinations_one_tile = set()  # Track one-tile destinations to avoid dupes
+    
+    # Iterate source positions
+    for src_bit in range(49):
+        if not (player_mask & (1 << src_bit)):
+            continue
+        
+        src_r, src_c = src_bit // 7, src_bit % 7
+        
+        # One-tile moves (deduplicate by destination)
+        for dst_bit, dst_r, dst_c in NEIGHBORS_1TILE[src_bit]:
+            if not (occupied_mask & (1 << dst_bit)):  # empty
+                dest_key = (dst_r, dst_c)
+                if dest_key not in destinations_one_tile:
+                    destinations_one_tile.add(dest_key)
+                    moves.append(MoveCoordinates((src_r, src_c), (dst_r, dst_c)))
+        
+        # Two-tile moves (keep all)
+        for dst_bit, dst_r, dst_c in NEIGHBORS_2TILE[src_bit]:
+            if not (occupied_mask & (1 << dst_bit)):  # empty
+                moves.append(MoveCoordinates((src_r, src_c), (dst_r, dst_c)))
+    
     return moves
-
-
-def print_tree(node, prefix: str = "", is_tail: bool = True):
-  """Print tree sideways with branches going upward."""
-  if node.parent:
-    UCT = node.parent.UCB1(node, 1.4)
-  else:
-    UCT = 0.0
-
-  if node.children:
-    for i, child in enumerate(node.children[:-1]):
-      print_tree(child, prefix + ("│   " if not is_tail else "    "), False)
-    print_tree(node.children[-1], prefix + ("│   " if not is_tail else "    "), True)
-  # print(prefix + ("└── " if is_tail else "┌── ") + f"[{node.minmax}] {node.wins}/{node.visits} UCT:{UCT: .3} Rat:{node.ratio: .3} ")
-  print(prefix + ("└── " if is_tail else "┌── ") + f"[{node.minmax}] {node.wins}/{node.visits} UCT:{UCT: .3} ")
-
+  
 
 opening_moves: dict[NDArray[np.int32], MoveCoordinates] = {}
 
@@ -95,6 +143,7 @@ class MinimaxNode:
     self.max_player = max_player
     self.min_player = min_player
 
+    
   def is_max_node(self):
     return self.is_max
 
@@ -125,11 +174,13 @@ class StudentAgent(Agent):
     super(StudentAgent, self).__init__()
     self.start_time = 0
     self.name = "StudentAgent"
-    self.max_depth = 4
+    self.max_depth = 5
     self.start_depth = 2
     self.n_moves = 0  # to keep track of total nb of moves
     self.N_OPENING = 0  # placeholder value
     # self.best_move = None  # store best max-player move so far for current turn
+
+    self.verbose = 1
 
     # masks for heuristic calculations
     mask1 = np.ones((7, 7), dtype=bool)
@@ -151,7 +202,6 @@ class StudentAgent(Agent):
     mask3[-1][-1] = True
     self.mask3 = mask3  # corners
 
-    self.random_pool = np.random.randint(0, 48, size=10_000)
 
 
   def utility(self, state: MinimaxNode) -> float:
@@ -173,7 +223,7 @@ class StudentAgent(Agent):
     return np.sum(state.board == state.max_player)  # all
 
 
-  def cutoff(self, s: MinimaxNode, depth: int) -> bool:
+  def cutoff(self, s: MinimaxNode, depth: int):
     pass
 
 
@@ -184,7 +234,10 @@ class StudentAgent(Agent):
     if s.is_terminal() or depth >= self.max_depth or time.time() - self.start_time > 1.99:
       return self.utility(s)
 
-    valid_moves = _get_valid_moves(s.board, s.player)
+    # valid_moves = newer_get_valid_moves(s.board, s.player)
+    valid_moves = super_fast_moves(s.board, s.player)
+    # valid_moves = super_fast_moves(s.friendly_mask, s.obstacle_mask)
+
 
     if len(valid_moves) == 0:
       return self.utility(s)
@@ -214,7 +267,7 @@ class StudentAgent(Agent):
     """
     Start alpha-beta pruning
     """
-    valid_moves = _get_valid_moves(chess_board, player)
+    valid_moves = super_fast_moves(chess_board, player)
 
     n = len(valid_moves)
     # print("==========================================")
@@ -238,20 +291,25 @@ class StudentAgent(Agent):
     child_move_pairs.sort(key = lambda t: np.sum(t[0].board == t[0].max_player), reverse=True)
 
     # compute alpha and get best move for the turn, with iterative deepening
-    while time.time() - self.start_time < 1.99:
-      for child, move in child_move_pairs:
+    try:
+       signal.setitimer(signal.ITIMER_REAL, 1.99)
+
+       for child, move in child_move_pairs:
         alpha_ = self._ab_pruning(child, alpha, beta, self.start_depth)
 
         if alpha < alpha_:
           alpha = alpha_
           best_move = move
+        
 
-        if time.time() - self.start_time > 1.99:
-          break
+    except Timeout:
+      pass
 
-      self.max_depth += 1
+    finally:
+       signal.setitimer(signal.ITIMER_REAL, 0)
 
-    self.max_depth = 4
+
+    # self.max_depth = 4
     return best_move
 
 
@@ -273,11 +331,9 @@ class StudentAgent(Agent):
     """
 
     # Some simple code to help you with timing. Consider checking
-    # time_taken during your search and breaking with the best answer
-    # so far when it nears 2 seconds.
-    self.start_time = time.time()
 
-    # next_move = get_valid_moves(chess_board, player)[0] #this litterally wins against a random agent 82% of the time
+    self.start_time = time.time()
+    
     if self.n_moves < self.N_OPENING:
       next_move = opening_moves[chess_board]
     else:
@@ -288,11 +344,8 @@ class StudentAgent(Agent):
 
     print("Student agent's turn took ", time_taken, "seconds.")
 
-    # Print profiler summary for this step
-    print(PROFILER.report(top=10))
+    # Print profiler
+    if self.verbose:
+      print(PROFILER.report(top=10))
 
-    # Dummy return (you should replace this with your actual logic)
-    # Returning a random valid move as an example
-    # return random_move(chess_board,player)
     return next_move
-

@@ -1,7 +1,11 @@
-- name: "Your full name as appears on your transcript"
-  mcgill_id: "Your mcgill id"
-  email: "email@mail.mcgill.ca"
+- name: "Antoine Parisé"
+  mcgill_id: "261115756"
+  email: "antoine.parise@mail.mcgill.ca"
 
-- name: "Your full name as appears on your transcript"
-  mcgill_id: "Your mcgill id"
-  email: "email@mail.mcgill.ca"
+- name: "Jiaqi Yang"
+  mcgill_id: "261120183"
+  email: "jiaqi.yang4@mail.mcgill.ca"
+
+- name: "Thomas Nguyen"
+  mcgill_id: "261 181 634"
+  email: "thomas.nguyen4@mail.mcgill.ca"
