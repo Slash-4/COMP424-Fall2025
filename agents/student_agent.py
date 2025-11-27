@@ -143,7 +143,6 @@ class MinimaxNode:
     self.max_player = max_player
     self.min_player = min_player
 
-    
   def is_max_node(self):
     return self.is_max
 
@@ -174,7 +173,8 @@ class StudentAgent(Agent):
     super(StudentAgent, self).__init__()
     self.start_time = 0
     self.name = "StudentAgent"
-    self.max_depth = 5
+    self.start_max_depth = 4
+    self.max_depth = 4
     self.start_depth = 2
     self.n_moves = 0  # to keep track of total nb of moves
     self.N_OPENING = 0  # placeholder value
@@ -203,7 +203,6 @@ class StudentAgent(Agent):
     self.mask3 = mask3  # corners
 
 
-
   def utility(self, state: MinimaxNode) -> float:
     # # f1 to f3: nb of max player discs in mask
     # f1 = np.sum(state.board[self.mask1] == state.max_player)  # non-edges
@@ -216,7 +215,7 @@ class StudentAgent(Agent):
     # f6 = np.sum(state.board[self.mask3] == state.min_player)  # corners
     # # return f1 + f2 + f3 - (f4 + f5 + f6)  # better W rate against below (0.53)
     # return f1 + f2  # 40% faster
-    return np.sum(state.board == state.max_player)  # all, faster still
+    return np.sum(state.board == state.max_player) - np.sum(state.board == state.min_player)  # all, faster still
 
 
   def start_heuristic(self, state: MinimaxNode) -> float:
@@ -231,13 +230,12 @@ class StudentAgent(Agent):
     """
     Recursive alpha-beta pruning call
     """
-    if s.is_terminal() or depth >= self.max_depth or time.time() - self.start_time > 1.99:
+    if s.is_terminal() or depth >= self.max_depth or time.time() - self.start_time > 0.49:
       return self.utility(s)
 
     # valid_moves = newer_get_valid_moves(s.board, s.player)
     valid_moves = super_fast_moves(s.board, s.player)
     # valid_moves = super_fast_moves(s.friendly_mask, s.obstacle_mask)
-
 
     if len(valid_moves) == 0:
       return self.utility(s)
@@ -292,24 +290,24 @@ class StudentAgent(Agent):
 
     # compute alpha and get best move for the turn, with iterative deepening
     try:
-       signal.setitimer(signal.ITIMER_REAL, 1.99)
+      signal.setitimer(signal.ITIMER_REAL, 0.49)
+      while True:
+        for child, move in child_move_pairs:
+          alpha_ = self._ab_pruning(child, alpha, beta, self.start_depth)
 
-       for child, move in child_move_pairs:
-        alpha_ = self._ab_pruning(child, alpha, beta, self.start_depth)
+          if alpha < alpha_:
+            alpha = alpha_
+            best_move = move
 
-        if alpha < alpha_:
-          alpha = alpha_
-          best_move = move
+        self.max_depth += 1
         
-
     except Timeout:
       pass
 
     finally:
        signal.setitimer(signal.ITIMER_REAL, 0)
 
-
-    # self.max_depth = 4
+    self.max_depth = self.start_max_depth
     return best_move
 
 
