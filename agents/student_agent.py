@@ -8,23 +8,6 @@ import numpy as np
 from helpers import execute_move, check_endgame, MoveCoordinates
 
 
-import signal
-
-class Timeout(Exception):
-    pass
-
-def handler(signum, frame):
-    raise Timeout()
-
-signal.signal(signal.SIGALRM, handler)
-
-def run_with_timeout(seconds, func, *args, **kwargs):
-    signal.alarm(seconds)
-    try:
-        return func(*args, **kwargs)
-    finally:
-        signal.alarm(0) 
-
 #------------- Debug tools ---------------- #
 
 # Lightweight timing profiler for method-level benchmarking
@@ -215,7 +198,7 @@ class StudentAgent(Agent):
     # f6 = np.sum(state.board[self.mask3] == state.min_player)  # corners
     # # return f1 + f2 + f3 - (f4 + f5 + f6)  # better W rate against below (0.53)
     # return f1 + f2  # 40% faster
-    return np.sum(state.board == state.max_player) - np.sum(state.board == state.min_player)  # all, faster still
+    return np.sum(state.board == state.max_player)  # all, faster still
 
 
   def start_heuristic(self, state: MinimaxNode) -> float:
@@ -289,23 +272,15 @@ class StudentAgent(Agent):
     child_move_pairs.sort(key = lambda t: np.sum(t[0].board == t[0].max_player), reverse=True)
 
     # compute alpha and get best move for the turn, with iterative deepening
-    try:
-      signal.setitimer(signal.ITIMER_REAL, 0.49)
-      while True:
-        for child, move in child_move_pairs:
-          alpha_ = self._ab_pruning(child, alpha, beta, self.start_depth)
+    while time.time() - self.start_time < .49:
+      for child, move in child_move_pairs:
+        alpha_ = self._ab_pruning(child, alpha, beta, self.start_depth)
 
-          if alpha < alpha_:
-            alpha = alpha_
-            best_move = move
+        if alpha < alpha_:
+          alpha = alpha_
+          best_move = move
 
-        self.max_depth += 1
-        
-    except Timeout:
-      pass
-
-    finally:
-       signal.setitimer(signal.ITIMER_REAL, 0)
+      self.max_depth += 1
 
     self.max_depth = self.start_max_depth
     return best_move
