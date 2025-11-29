@@ -8,23 +8,6 @@ import numpy as np
 from helpers import execute_move, check_endgame, MoveCoordinates
 
 
-import signal
-
-class Timeout(Exception):
-    pass
-
-def handler(signum, frame):
-    raise Timeout()
-
-signal.signal(signal.SIGALRM, handler)
-
-def run_with_timeout(seconds, func, *args, **kwargs):
-    signal.alarm(seconds)
-    try:
-        return func(*args, **kwargs)
-    finally:
-        signal.alarm(0) 
-
 #------------- Debug tools ---------------- #
 
 # Lightweight timing profiler for method-level benchmarking
@@ -143,7 +126,6 @@ class MinimaxNode:
     self.max_player = max_player
     self.min_player = min_player
 
-    
   def is_max_node(self):
     return self.is_max
 
@@ -164,6 +146,7 @@ class MinimaxNode:
 
     return succ
 
+
 @register_agent("student_agent")
 class StudentAgent(Agent):
   """
@@ -174,7 +157,8 @@ class StudentAgent(Agent):
     super(StudentAgent, self).__init__()
     self.start_time = 0
     self.name = "StudentAgent"
-    self.max_depth = 5
+    self.start_max_depth = 4
+    self.max_depth = 4
     self.start_depth = 2
     self.n_moves = 0  # to keep track of total nb of moves
     self.N_OPENING = 0  # placeholder value
@@ -201,7 +185,6 @@ class StudentAgent(Agent):
     mask3[-1][0] = True
     mask3[-1][-1] = True
     self.mask3 = mask3  # corners
-
 
 
   def utility(self, state: MinimaxNode) -> float:
@@ -231,13 +214,12 @@ class StudentAgent(Agent):
     """
     Recursive alpha-beta pruning call
     """
-    if s.is_terminal() or depth >= self.max_depth or time.time() - self.start_time > 1.99:
+    if s.is_terminal() or depth >= self.max_depth or time.time() - self.start_time > 0.49:
       return self.utility(s)
 
     # valid_moves = newer_get_valid_moves(s.board, s.player)
     valid_moves = super_fast_moves(s.board, s.player)
     # valid_moves = super_fast_moves(s.friendly_mask, s.obstacle_mask)
-
 
     if len(valid_moves) == 0:
       return self.utility(s)
@@ -291,25 +273,17 @@ class StudentAgent(Agent):
     child_move_pairs.sort(key = lambda t: np.sum(t[0].board == t[0].max_player), reverse=True)
 
     # compute alpha and get best move for the turn, with iterative deepening
-    try:
-       signal.setitimer(signal.ITIMER_REAL, 1.99)
-
-       for child, move in child_move_pairs:
+    while time.time() - self.start_time < .49:
+      for child, move in child_move_pairs:
         alpha_ = self._ab_pruning(child, alpha, beta, self.start_depth)
 
         if alpha < alpha_:
           alpha = alpha_
           best_move = move
-        
 
-    except Timeout:
-      pass
+      self.max_depth += 1
 
-    finally:
-       signal.setitimer(signal.ITIMER_REAL, 0)
-
-
-    # self.max_depth = 4
+    self.max_depth = self.start_max_depth
     return best_move
 
 
