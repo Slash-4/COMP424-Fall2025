@@ -7,9 +7,8 @@ import numpy as np
 
 from helpers import execute_move, check_endgame, MoveCoordinates
 
-
 import signal
-
+import copy
 class Timeout(Exception):
     pass
 
@@ -32,6 +31,11 @@ import time
 import functools
 
 class SimpleProfiler:
+  """
+  Profiler tool to evaluate the runtime of different functions
+  """
+
+
   def __init__(self):
     self.data = {}  # label -> {'time': float, 'count': int}
 
@@ -64,7 +68,10 @@ class SimpleProfiler:
 
 PROFILER = SimpleProfiler()
 
-#bitmask generator
+
+
+#------------- Optimization ---------------- #
+
 one_tile_offsets = [(-1, 0), (1, 0), (0, -1), (0, 1), 
                     (-1, -1), (-1, 1), (1, -1), (1, 1)]
 two_tile_offsets = [(-2, 0), (2, 0), (0, -2), (0, 2),
@@ -101,7 +108,14 @@ def board_to_bitmasks(chess_board, player: int) -> tuple[int, int]:
 
 @PROFILER.profile("MCTS.super_fast_moves")
 def super_fast_moves(chess_board, player: int) -> list[MoveCoordinates]:
-    
+    """
+    Improved get moves function optimized for speed
+
+    This function uses a precomputed set of displacement bitmaps to speed up 
+    acquiring all distinct valid moves. This optimization is usefull because
+    of the very large volume of calls, and takes ~0.07ms per call
+
+    """
     player_mask, obstacle_mask = board_to_bitmasks(chess_board, player)
     occupied_mask = player_mask | obstacle_mask
     
@@ -119,6 +133,8 @@ def super_fast_moves(chess_board, player: int) -> list[MoveCoordinates]:
         for dst_bit, dst_r, dst_c in NEIGHBORS_1TILE[src_bit]:
             if not (occupied_mask & (1 << dst_bit)):  # empty
                 dest_key = (dst_r, dst_c)
+
+                #1 tile moves with identical destinations are strictly equivalent, therefore we reduce the branching factor greatly by folding them together
                 if dest_key not in destinations_one_tile:
                     destinations_one_tile.add(dest_key)
                     moves.append(MoveCoordinates((src_r, src_c), (dst_r, dst_c)))
@@ -126,17 +142,106 @@ def super_fast_moves(chess_board, player: int) -> list[MoveCoordinates]:
         # Two-tile moves (keep all)
         for dst_bit, dst_r, dst_c in NEIGHBORS_2TILE[src_bit]:
             if not (occupied_mask & (1 << dst_bit)):  # empty
+                dest_key = (dst_r, dst_c)
+
+                #although not strictly indifferent it would make sense that 1-tile moves are nearly always better than 2 jumps
+                # if dest_key not in destinations_one_tile:
+                #   moves.append(MoveCoordinates((src_r, src_c), (dst_r, dst_c)))
+
                 moves.append(MoveCoordinates((src_r, src_c), (dst_r, dst_c)))
     
     return moves
+
+
+def _execute_move(board: list[int], move :list[int], player):
+
+   f_0, e_0, o  = board 
+   d, src, dst = move
+   
+
+   f = (NEIGHBORS_1TILE[dst][0][0] ^ e_0) | (f_0 << dst) ^ (src ^ ~d) #only append the source if its a distance of 1 (d=0)
+   e = e_0 ^ ~(NEIGHBORS_1TILE[dst][0][0] ^ e_0)  #remove the enemies that are gobled
+
+   return [f, e, o]
   
+def _board_to_bitmap(chess_board, player, ennemy):
+   player_mask = 0
+   ennemy_mask = 0
+   obstacle_mask = 0
+
+   for r in range(7):
+    for c in range(7):
+     idx = r * 7 + c
+     if chess_board[r, c] == player:
+      player_mask |= (1 << idx)
+     elif chess_board[r,c] == ennemy:
+        ennemy_mask |= (1 << idx)
+     elif chess_board[r, c] == 3:  # obstacle
+      obstacle_mask |= (1 << idx)
+   return player_mask, ennemy_mask, obstacle_mask
+
+
 
 opening_moves: dict[NDArray[np.int32], MoveCoordinates] = {}
 
+def _super_fast_moves(chess_board, player: int) :
+    """
+    Improved get moves function optimized for speed
+
+    This function uses a precomputed set of displacement bitmaps to speed up 
+    acquiring all distinct valid moves. This optimization is usefull because
+    of the very large volume of calls, and takes ~0.07ms per call
+
+    """
+    
+    player_mask, ennemy_mask, obstacle_mask = _board_to_bitmap(chess_board, player, 3-player)
+
+       
+    occupied_mask = player_mask | ennemy_mask| obstacle_mask  
+    
+    moves = []
+    destinations_one_tile = set()  # Track one-tile destinations to avoid dupes
+    
+    # Iterate source positions
+    for src_bit in range(49):
+        if not (player_mask & (1 << src_bit)):
+            continue
+        
+        
+        # One-tile moves (deduplicate by destination)
+        for dst_bit, dst_r, dst_c in NEIGHBORS_1TILE[src_bit]:
+            if not (occupied_mask & (1 << dst_bit)):  # empty
+                dest_key = (dst_r, dst_c)
+
+                #1 tile moves with identical destinations are strictly equivalent, therefore we reduce the branching factor greatly by folding them together
+                if dest_key not in destinations_one_tile:
+                    destinations_one_tile.add(dest_key)
+                    moves.append((0, src_bit, dst_bit))
+        
+        # Two-tile moves (keep all)
+        for dst_bit, dst_r, dst_c in NEIGHBORS_2TILE[src_bit]:
+            if not (occupied_mask & (1 << dst_bit)):  # empty
+                # dest_key = (dst_r, dst_c)
+
+                #although not strictly indifferent it would make sense that 1-tile moves are nearly always better than 2 jumps
+                # if dest_key not in destinations_one_tile:
+                #   moves.append(MoveCoordinates((src_r, src_c), (dst_r, dst_c)))
+
+                moves.append((1, src_bit, dst_bit))
+
+    return moves
+
+def _check_endgame(board):
+   #returns true if either players is fully gone
+   return board[0] == 0 or board[1] == 0
+  
 
 class MinimaxNode:
   def __init__(self, chess_board, max_player: int, min_player: int, is_max: bool):
     self.board = chess_board
+
+    self.bitboard = chess_board
+    
     self.is_max = is_max
     self.player = max_player if is_max else min_player
     self.opponent = min_player if is_max else max_player
@@ -151,7 +256,7 @@ class MinimaxNode:
     is_endgame, _, _ = check_endgame(self.board)
     return is_endgame
 
-  def get_successors(self, valid_moves:list[MoveCoordinates]) -> list["MinimaxNode"]:
+  def get_successors(self, valid_moves) -> list["MinimaxNode"]:
     """
     Get all children for the current state
     """
@@ -174,7 +279,7 @@ class StudentAgent(Agent):
     super(StudentAgent, self).__init__()
     self.start_time = 0
     self.name = "StudentAgent"
-    self.max_depth = 5
+    self.max_depth = 3
     self.start_depth = 2
     self.n_moves = 0  # to keep track of total nb of moves
     self.N_OPENING = 0  # placeholder value
@@ -220,6 +325,7 @@ class StudentAgent(Agent):
 
 
   def start_heuristic(self, state: MinimaxNode) -> float:
+
     return np.sum(state.board == state.max_player)  # all
 
 
@@ -231,24 +337,18 @@ class StudentAgent(Agent):
     """
     Recursive alpha-beta pruning call
     """
+
     if s.is_terminal() or depth >= self.max_depth or time.time() - self.start_time > 1.99:
       return self.utility(s)
 
     # valid_moves = newer_get_valid_moves(s.board, s.player)
     valid_moves = super_fast_moves(s.board, s.player)
-    # valid_moves = super_fast_moves(s.friendly_mask, s.obstacle_mask)
-
-
+  
     if len(valid_moves) == 0:
       return self.utility(s)
 
     succ = s.get_successors(valid_moves)
 
-    # if depth <= 2:
-    #   sorted_moves = sorted(zip(succ, valid_moves),
-    #                         key = lambda t: np.sum(t[0].board == t[0].max_player),
-    #                         reverse=True)
-    #   succ = [t[0] for t in sorted_moves]
 
     if s.is_max_node(): #max player case
       for s_ in succ:
@@ -267,11 +367,22 @@ class StudentAgent(Agent):
     """
     Start alpha-beta pruning
     """
-    valid_moves = super_fast_moves(chess_board, player)
+    # valid_moves = super_fast_moves(chess_board, player)
+    valid_moves_r = _super_fast_moves(chess_board, player)
+    #convert back to regular output
+    valid_moves = []
+    
+    for move in valid_moves_r:
+      _, src_bit, dst_bit  = move
+
+      src_r, src_c = src_bit // 7, src_bit % 7
+      dst_r, dst_c = dst_bit // 7, dst_bit % 7
+
+      valid_moves.append(MoveCoordinates((src_r, src_c), (dst_r, dst_c)))
+
 
     n = len(valid_moves)
-    # print("==========================================")
-    # print(f"# of valid moves: {n}")
+
     if n == 0:
       return None
     elif n == 1:
@@ -281,11 +392,13 @@ class StudentAgent(Agent):
 
     node = MinimaxNode(chess_board, player, opponent, True)
     succ = node.get_successors(valid_moves)
-
+    
     best_move = None
 
     alpha = -sys.maxsize
     beta = sys.maxsize
+
+
 
     child_move_pairs = list(zip(succ, valid_moves))
     child_move_pairs.sort(key = lambda t: np.sum(t[0].board == t[0].max_player), reverse=True)
@@ -303,10 +416,19 @@ class StudentAgent(Agent):
         
 
     except Timeout:
-      pass
+      print("Timeout")
 
     finally:
        signal.setitimer(signal.ITIMER_REAL, 0)
+
+    #convert back to regular output
+    # if best_move:
+    #   _, src_bit, dst_bit  = best_move
+
+    #   src_r, src_c = src_bit // 7, src_bit % 7
+    #   dst_r, dst_c = dst_bit // 7, dst_bit % 7
+
+    #   return MoveCoordinates((src_r, src_c), (dst_r, dst_c))
 
 
     # self.max_depth = 4
