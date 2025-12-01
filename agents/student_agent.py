@@ -167,10 +167,11 @@ class StudentAgent(Agent):
     super(StudentAgent, self).__init__()
     self.start_time = 0
     self.name = "StudentAgent"
-    self.start_max_depth = 4
-    self.max_depth = 4
-    self.start_depth = 2
+    self.start_max_depth = 4  # minimax search depth at first iteration of iterative deepening
+    self.max_depth = 4   # max minimax search depth for given iteration of iterative deepening
+    self.start_depth = 2  # will become clear at `run_ab_pruning()`
 
+    # Get profiler report at each of the agent's move.
     self.verbose = 1
 
 
@@ -186,13 +187,16 @@ class StudentAgent(Agent):
     Recursive alpha-beta pruning call
     """
     if time.time() - self.start_time > 1.95:
+      # We ran out of time. Abort.
       return -sys.maxsize
     if s.is_terminal() or depth >= self.max_depth:
+      # State (node) is at cutoff.
       return self.utility(s)
 
     valid_moves = super_fast_moves(s.board, s.player)
 
     if len(valid_moves) == 0:
+      # State is at cutoff.
       return self.utility(s)
 
     succ = s.get_successors(valid_moves)
@@ -232,9 +236,11 @@ class StudentAgent(Agent):
     child_move_pairs = list(zip(succ, valid_moves))
     child_move_pairs.sort(key = lambda t: np.sum(t[0].board == t[0].max_player), reverse=True)
 
-    # compute alpha and get best move for the turn, with iterative deepening
+    # Compute alpha and get best move for the turn, with iterative deepening.
     while time.time() - self.start_time < 1.95:
       for child, move in child_move_pairs:
+        # Initiate recursive alpha-beta pruning call for each child node.
+        # Naturally, self.start_depth should be and is 2.
         alpha_ = self._ab_pruning(child, alpha, beta, self.start_depth)
 
         if alpha < alpha_:
@@ -243,7 +249,7 @@ class StudentAgent(Agent):
 
       self.max_depth += 1
 
-    # reset max depth for next move 
+    # Reset max depth for next move.
     self.max_depth = self.start_max_depth
     return best_move
 
