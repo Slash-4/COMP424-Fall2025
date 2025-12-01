@@ -88,7 +88,6 @@ def board_to_bitmasks(chess_board, player: int) -> tuple[int, int]:
 def super_fast_moves(chess_board, player: int) -> list[MoveCoordinates]:
     """
     Optimized get valid moves function with 1-tile move deduplication to reduce branching factor.
-    
     """
     player_mask, obstacle_mask = board_to_bitmasks(chess_board, player)
     occupied_mask = player_mask | obstacle_mask
@@ -120,6 +119,9 @@ def super_fast_moves(chess_board, player: int) -> list[MoveCoordinates]:
   
 
 class MinimaxNode:
+  """
+  Represents each minimax node in the minimax tree
+  """
   def __init__(self, chess_board, max_player: int, min_player: int, is_max: bool):
     self.board = chess_board
     self.is_max = is_max
@@ -129,9 +131,15 @@ class MinimaxNode:
     self.min_player = min_player
 
   def is_max_node(self):
+    """
+    Check if current node is a max node
+    """
     return self.is_max
   
   def is_terminal(self):
+    """
+    Check if current node is at a terminal state
+    """
     is_endgame, _, _ = check_endgame(self.board)
     return is_endgame
 
@@ -167,6 +175,9 @@ class StudentAgent(Agent):
 
 
   def utility(self, state: MinimaxNode) -> float:
+    """
+    Get the utility score of a node. Based on number of pieces on the board.
+    """
     return np.sum(state.board == state.max_player)  # all, faster still
 
 
@@ -201,7 +212,7 @@ class StudentAgent(Agent):
   @PROFILER.profile("StudentAgent.run_ab_pruning")
   def run_ab_pruning(self, chess_board, player, opponent) -> MoveCoordinates|None:
     """
-    Start alpha-beta pruning
+    Start alpha-beta pruning algorithm
     """
     valid_moves = super_fast_moves(chess_board, player)
 
@@ -217,6 +228,7 @@ class StudentAgent(Agent):
     alpha = -sys.maxsize
     beta = sys.maxsize
 
+    # Sort moves with better utility to be computed first
     child_move_pairs = list(zip(succ, valid_moves))
     child_move_pairs.sort(key = lambda t: np.sum(t[0].board == t[0].max_player), reverse=True)
 
@@ -231,6 +243,7 @@ class StudentAgent(Agent):
 
       self.max_depth += 1
 
+    # reset max depth for next move 
     self.max_depth = self.start_max_depth
     return best_move
 
