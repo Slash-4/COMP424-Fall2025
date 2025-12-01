@@ -44,8 +44,8 @@ class SimpleProfiler:
       out.append(f"{label:30} {v['time']:.6f}s  {v['count']:6d}  avg={avg:.6f}s")
     return "\n".join(out)
 
-
 PROFILER = SimpleProfiler()
+
 
 #bitmask generator
 one_tile_offsets = [(-1, 0), (1, 0), (0, -1), (0, 1), 
@@ -114,9 +114,6 @@ def super_fast_moves(chess_board, player: int) -> list[MoveCoordinates]:
     return moves
   
 
-opening_moves: dict[NDArray[np.int32], MoveCoordinates] = {}
-
-
 class MinimaxNode:
   def __init__(self, chess_board, max_player: int, min_player: int, is_max: bool):
     self.board = chess_board
@@ -128,7 +125,7 @@ class MinimaxNode:
 
   def is_max_node(self):
     return self.is_max
-
+  
   def is_terminal(self):
     is_endgame, _, _ = check_endgame(self.board)
     return is_endgame
@@ -160,8 +157,6 @@ class StudentAgent(Agent):
     self.start_max_depth = 4
     self.max_depth = 4
     self.start_depth = 2
-    self.n_moves = 0  # to keep track of total nb of moves
-    self.N_OPENING = 0  # placeholder value
 
     self.verbose = 1
 
@@ -256,11 +251,7 @@ class StudentAgent(Agent):
 
     self.start_time = time.time()
     
-    if self.n_moves < self.N_OPENING:
-      next_move = opening_moves[chess_board]
-    else:
-      next_move = self.run_ab_pruning(chess_board, player, opponent)
-    self.n_moves += 1
+    next_move = self.run_ab_pruning(chess_board, player, opponent)
 
     time_taken = time.time() - self.start_time
 
