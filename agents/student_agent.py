@@ -162,73 +162,29 @@ class StudentAgent(Agent):
     self.start_depth = 2
     self.n_moves = 0  # to keep track of total nb of moves
     self.N_OPENING = 0  # placeholder value
-    # self.best_move = None  # store best max-player move so far for current turn
 
     self.verbose = 1
 
-    # masks for heuristic calculations
-    mask1 = np.ones((7, 7), dtype=bool)
-    mask1[0, :] = False
-    mask1[-1, :] = False
-    mask1[:, 0] = False
-    mask1[:, -1] = False
-    self.mask1 = mask1  # non-edges
-    mask2 = np.zeros((7, 7), dtype=bool)
-    mask2[0, :] = True
-    mask2[-1, :] = True
-    mask2[:, 0] = True
-    mask2[:, -1] = True
-    self.mask2 = mask2  # edges
-    mask3 = np.zeros((7, 7), dtype=bool)
-    mask3[0][0] = True
-    mask3[0][-1] = True
-    mask3[-1][0] = True
-    mask3[-1][-1] = True
-    self.mask3 = mask3  # corners
-
 
   def utility(self, state: MinimaxNode) -> float:
-    # # f1 to f3: nb of max player discs in mask
-    # f1 = np.sum(state.board[self.mask1] == state.max_player)  # non-edges
-    # f2 = np.sum(state.board[self.mask2] == state.max_player)  # edges
-    # f3 = np.sum(state.board[self.mask3] == state.max_player)  # corners
-    # #
-    # # # f4 to f6: nb of min player discs in mask
-    # f4 = np.sum(state.board[self.mask1] == state.min_player)  # non-edges
-    # f5 = np.sum(state.board[self.mask2] == state.min_player)  # edges
-    # f6 = np.sum(state.board[self.mask3] == state.min_player)  # corners
-    # # return f1 + f2 + f3 - (f4 + f5 + f6)  # better W rate against below (0.53)
-    # return f1 + f2  # 40% faster
     return np.sum(state.board == state.max_player)  # all, faster still
-
-
-  def start_heuristic(self, state: MinimaxNode) -> float:
-    return np.sum(state.board == state.max_player)  # all
 
 
   def _ab_pruning(self, s: MinimaxNode, alpha: float, beta: float, depth: int) -> float:
     """
     Recursive alpha-beta pruning call
     """
-    if time.time() - self.start_time > .5:
+    if time.time() - self.start_time > 1.95:
       return -sys.maxsize
     if s.is_terminal() or depth >= self.max_depth:
       return self.utility(s)
 
-    # valid_moves = newer_get_valid_moves(s.board, s.player)
     valid_moves = super_fast_moves(s.board, s.player)
-    # valid_moves = super_fast_moves(s.friendly_mask, s.obstacle_mask)
 
     if len(valid_moves) == 0:
       return self.utility(s)
 
     succ = s.get_successors(valid_moves)
-
-    # if depth <= 2:
-    #   sorted_moves = sorted(zip(succ, valid_moves),
-    #                         key = lambda t: np.sum(t[0].board == t[0].max_player),
-    #                         reverse=True)
-    #   succ = [t[0] for t in sorted_moves]
 
     if s.is_max_node(): #max player case
       for s_ in succ:
@@ -250,14 +206,8 @@ class StudentAgent(Agent):
     valid_moves = super_fast_moves(chess_board, player)
 
     n = len(valid_moves)
-    # print("==========================================")
-    # print(f"# of valid moves: {n}")
     if n == 0:
       return None
-    # elif n == 1:
-    #   return valid_moves[0]
-    # if len(valid_moves) == 0:
-    #   return None
 
     node = MinimaxNode(chess_board, player, opponent, True)
     succ = node.get_successors(valid_moves)
@@ -271,7 +221,7 @@ class StudentAgent(Agent):
     child_move_pairs.sort(key = lambda t: np.sum(t[0].board == t[0].max_player), reverse=True)
 
     # compute alpha and get best move for the turn, with iterative deepening
-    while time.time() - self.start_time < 0.5:
+    while time.time() - self.start_time < 1.95:
       for child, move in child_move_pairs:
         alpha_ = self._ab_pruning(child, alpha, beta, self.start_depth)
 
