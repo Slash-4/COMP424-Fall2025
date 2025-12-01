@@ -58,6 +58,8 @@ two_tile_offsets = [(-2, 0), (2, 0), (0, -2), (0, 2),
 NEIGHBORS_1TILE = [[] for _ in range(49)]
 NEIGHBORS_2TILE = [[] for _ in range(49)]
 
+#Builds a bit mask of neighbor tiles for all 49 board positions
+#The neighbors of tile src_idx are NEIGHBOR_1TILE[src_idx] + NEIGHBOR_2TILES[src_idx]
 for pos in range(49):
     r, c = pos // 7, pos % 7
     for dr, dc in one_tile_offsets:
@@ -84,7 +86,10 @@ def board_to_bitmasks(chess_board, player: int) -> tuple[int, int]:
 
 @PROFILER.profile("MCTS.super_fast_moves")
 def super_fast_moves(chess_board, player: int) -> list[MoveCoordinates]:
+    """
+    Optimized get valid moves function with 1-tile move deduplication to reduce branching factor.
     
+    """
     player_mask, obstacle_mask = board_to_bitmasks(chess_board, player)
     occupied_mask = player_mask | obstacle_mask
     
@@ -158,10 +163,10 @@ class StudentAgent(Agent):
     self.start_time = 0
     self.name = "StudentAgent"
     self.start_max_depth = 4
-    self.max_depth = 4
-    self.start_depth = 2
-    self.n_moves = 0  # to keep track of total nb of moves
-    self.N_OPENING = 0  # placeholder value
+    self.max_depth = 4          #max depth
+    self.start_depth = 2        #start depth
+    self.n_moves = 0            # to keep track of total nb of moves
+    self.N_OPENING = 0          # placeholder value
 
     self.verbose = 1
 
@@ -256,18 +261,21 @@ class StudentAgent(Agent):
 
     self.start_time = time.time()
     
+    #precomputed early moves
     if self.n_moves < self.N_OPENING:
       next_move = opening_moves[chess_board]
+    #ab pruning moves
     else:
       next_move = self.run_ab_pruning(chess_board, player, opponent)
+    
     self.n_moves += 1
 
     time_taken = time.time() - self.start_time
 
-    print("Student agent's turn took ", time_taken, "seconds.")
 
     # Print profiler
     if self.verbose:
+      print("Student agent's turn took ", time_taken, "seconds.")
       print(PROFILER.report(top=10))
 
     return next_move
