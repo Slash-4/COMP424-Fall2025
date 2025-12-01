@@ -211,7 +211,7 @@ class StudentAgent(Agent):
     Recursive alpha-beta pruning call
     """
     if time.time() - self.start_time > .5:
-      return self.utility(s)
+      return -sys.maxsize
     if s.is_terminal() or depth >= self.max_depth:
       return self.utility(s)
 
