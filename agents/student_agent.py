@@ -206,15 +206,13 @@ class StudentAgent(Agent):
     return np.sum(state.board == state.max_player)  # all
 
 
-  def cutoff(self, s: MinimaxNode, depth: int):
-    pass
-
-
   def _ab_pruning(self, s: MinimaxNode, alpha: float, beta: float, depth: int) -> float:
     """
     Recursive alpha-beta pruning call
     """
-    if s.is_terminal() or depth >= self.max_depth or time.time() - self.start_time > 0.49:
+    if time.time() - self.start_time > .5:
+      return self.utility(s)
+    if s.is_terminal() or depth >= self.max_depth:
       return self.utility(s)
 
     # valid_moves = newer_get_valid_moves(s.board, s.player)
@@ -256,8 +254,8 @@ class StudentAgent(Agent):
     # print(f"# of valid moves: {n}")
     if n == 0:
       return None
-    elif n == 1:
-      return valid_moves[0]
+    # elif n == 1:
+    #   return valid_moves[0]
     # if len(valid_moves) == 0:
     #   return None
 
@@ -273,7 +271,7 @@ class StudentAgent(Agent):
     child_move_pairs.sort(key = lambda t: np.sum(t[0].board == t[0].max_player), reverse=True)
 
     # compute alpha and get best move for the turn, with iterative deepening
-    while time.time() - self.start_time < .49:
+    while time.time() - self.start_time < 0.5:
       for child, move in child_move_pairs:
         alpha_ = self._ab_pruning(child, alpha, beta, self.start_depth)
 
